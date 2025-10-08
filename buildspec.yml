@@ -1,0 +1,17 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      dotnet: 8.0
+  build:
+    commands:
+      - cd ExpenseSplit
+      - dotnet publish -c Release -o output
+  post_build:
+    commands:
+      - cd ExpenseSplit
+      - aws s3 sync output/wwwroot/ s3://expensesplit-frontend --delete
+artifacts:
+  files:
+    - '**/*'
+  base-directory: output/wwwroot
