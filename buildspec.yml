@@ -9,7 +9,6 @@ phases:
       - dotnet publish -c Release -o output
   post_build:
     commands:
-      - cd ExpenseSplit
       - aws s3 sync output/wwwroot/ s3://expensesplit-frontend --delete
 artifacts:
   files:
