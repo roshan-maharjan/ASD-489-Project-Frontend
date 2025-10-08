@@ -6,6 +6,7 @@ phases:
   build:
     commands:
       - cd ExpenseSplit
+      - dotnet clean
       - dotnet publish -c Release -o output
   post_build:
     commands:
