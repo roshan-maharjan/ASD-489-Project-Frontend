@@ -1,0 +1,100 @@
+﻿@page "/profile"
+@using ExpenseSplit.Models.DTOs
+@using Microsoft.AspNetCore.Authorization
+@inject IHttpClientFactory HttpClientFactory
+@attribute [Authorize]
+
+<PageTitle>My Profile</PageTitle>
+
+<h3><span class="oi oi-person me-2"></span>My Profile</h3>
+
+@if (user == null)
+{
+    <p><em>Loading profile...</em></p>
+}
+else
+{
+    <div class="card shadow-sm" style="max-width: 500px;">
+        <div class="card-body">
+            <h5 class="card-title">@user.FirstName @user.LastName</h5>
+            <h6 class="card-subtitle mb-2 text-muted">@user.Email</h6>
+
+            <hr />
+
+            <h6 class="mt-4">Payment QR Code</h6>
+            <p>Upload a QR code image (like Venmo or Cash App) so others can pay you.</p>
+
+            @if (!string.IsNullOrEmpty(user.QRCodeS3Url))
+            {
+                <div class="mb-3">
+                    <img src="@user.QRCodeS3Url" alt="My QR Code" class="img-thumbnail" style="max-width: 250px;" />
+                </div>
+            }
+
+            <InputFile OnChange="HandleFileSelected" class="form-control" />
+
+            @if (uploadMessage != null)
+            {
+                <div class="alert alert-info mt-3">@uploadMessage</div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private UserProfile? user;
+    private string? uploadMessage;
+    private long maxFileSize = 1024 * 1024 * 5; // 5 MB
+    private HttpClient _httpClient;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _httpClient = HttpClientFactory.CreateClient("WebAPI");
+        await LoadProfile();
+    }
+
+    private async Task LoadProfile()
+    {
+        user = await _httpClient.GetFromJsonAsync<UserProfile>("api/account/profile");
+    }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        uploadMessage = "Uploading...";
+        var file = e.File;
+
+        if (file == null)
+        {
+            uploadMessage = "No file selected.";
+            return;
+        }
+
+        try
+        {
+            var content = new MultipartFormDataContent();
+            var fileContent = new StreamContent(file.OpenReadStream(maxFileSize), (int)file.Size);
+            fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+
+            content.Add(
+                content: fileContent,
+                name: "file",
+                fileName: file.Name);
+
+            var response = await _httpClient.PostAsync("api/account/profile/qrcode", content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                uploadMessage = "Upload successful!";
+                await LoadProfile(); // Refresh profile to show new image
+            }
+            else
+            {
+                uploadMessage = "Upload failed.";
+            }
+        }
+        catch (Exception ex)
+        {
+            uploadMessage = $"Error: {ex.Message}";
+        }
+    }
+}

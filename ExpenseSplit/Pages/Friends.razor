@@ -1,0 +1,154 @@
+﻿@page "/friends"
+@using ExpenseSplit.Models.DTOs
+@using Microsoft.AspNetCore.Authorization
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Web
+@inject IHttpClientFactory HttpClientFactory
+@attribute [Authorize]
+
+<PageTitle>My Friends</PageTitle>
+
+<h3><span class="oi oi-people me-2"></span>My Friends</h3>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card shadow-sm">
+            <div class="card-header">Your Friends List</div>
+            <div class="list-group list-group-flush">
+                @if (friends == null)
+                {
+                    <div class="list-group-item">Loading...</div>
+                }
+                else if (friends.Count == 0)
+                {
+                    <div class="list-group-item">You haven't added any friends yet.</div>
+                }
+                else
+                {
+                    @foreach (var friend in friends)
+                    {
+                        // Added d-flex for button alignment
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>
+                                @friend.FirstName @friend.LastName (@friend.Email)
+                            </span>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveFriend(friend.Id)">
+                                <span class="oi oi-trash"></span> Remove
+                            </button>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card shadow-sm">
+            <div class="card-header">Add New Friends</div>
+            <div class="card-body">
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control" placeholder="Search by name or email..."
+                           @bind="searchTerm" @bind:event="oninput"
+                           @onkeyup="HandleSearchKeyup" />
+                    <button class="btn btn-outline-secondary" @onclick="SearchUsers">Search</button>
+                </div>
+
+                @if (searchResults != null)
+                {
+                    <ul class="list-group">
+                        @foreach (var user in searchResults)
+                        {
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                @user.FirstName @user.LastName (@user.Email)
+                                <button class="btn btn-sm btn-primary" @onclick="() => AddFriend(user.Id)">Add</button>
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (message != null)
+                {
+                    <div class="alert alert-info mt-3">@message</div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<UserProfile>? friends;
+    private List<UserProfile>? searchResults;
+    private string? searchTerm;
+    private string? message;
+    private HttpClient _httpClient;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _httpClient = HttpClientFactory.CreateClient("WebAPI");
+        await LoadFriends();
+    }
+
+    private async Task LoadFriends()
+    {
+        friends = await _httpClient.GetFromJsonAsync<List<UserProfile>>("api/friends");
+    }
+
+    private async Task SearchUsers()
+    {
+        message = null;
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            searchResults = new();
+            return;
+        }
+
+        // UPDATED: Changed to new server-side filtered endpoint
+        searchResults = await _httpClient.GetFromJsonAsync<List<UserProfile>>($"api/friends/search-non-friends?query={searchTerm}");
+    }
+
+    // NEW: Handles the Enter key press for search
+    private async Task HandleSearchKeyup(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SearchUsers();
+        }
+    }
+
+    private async Task AddFriend(string friendId)
+    {
+        message = null;
+        var response = await _httpClient.PostAsync($"api/friends?friendId={friendId}", null);
+        if (response.IsSuccessStatusCode)
+        {
+            message = "Friend added!";
+            await LoadFriends(); // Refresh friend list
+            searchResults?.RemoveAll(u => u.Id == friendId); // Remove from search results
+        }
+        else
+        {
+            message = "Error adding friend.";
+        }
+    }
+
+    // NEW: Method to remove a friend
+    private async Task RemoveFriend(string friendId)
+    {
+        message = null;
+        var response = await _httpClient.DeleteAsync($"api/friends/{friendId}");
+
+        if (response.IsSuccessStatusCode)
+        {
+            message = "Friend removed.";
+            // Remove from the list locally for a fast UI update
+            friends?.RemoveAll(f => f.Id == friendId);
+
+            // Optionally, clear search to avoid confusion
+            // searchResults = null;
+            // searchTerm = string.Empty;
+        }
+        else
+        {
+            message = "Error removing friend.";
+        }
+    }
+}

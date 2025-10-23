@@ -1,7 +1,165 @@
 ﻿@page "/"
+@using ExpenseSplit.Models.DTOs
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Dashboard - Expense Split</PageTitle>
 
-<h1>Expense Split</h1>
+<div class="container mt-4">
 
-Welcome to your new app.
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="display-4">Dashboard</h1>
+            <p class="lead">Here's a summary of your expense-splitting activity.</p>
+        </div>
+    </div>
+
+    <div class="row text-center">
+        <div class="col-md-4 mb-3">
+            <div class="card text-white bg-danger shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="bi bi-arrow-up-circle"></i> You Owe</h5>
+                    <p class="card-text fs-3 fw-bold">@youOwe.ToString("C")</p>
+                </div>
+                <NavLink href="debts" class="card-footer text-white text-decoration-none">
+                    View Details <i class="bi bi-arrow-right-short"></i>
+                </NavLink>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <div class="card text-white bg-success shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="bi bi-arrow-down-circle"></i> You Are Owed</h5>
+                    <p class="card-text fs-3 fw-bold">@youAreOwed.ToString("C")</p>
+                </div>
+                <NavLink href="debts?tab=outstanding" class="card-footer text-white text-decoration-none">View Details <i class="bi bi-arrow-right-short"></i></NavLink>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <div class="card text-dark bg-light shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="bi bi-bank"></i> Total Balance</h5>
+                    <p class="card-text fs-3 fw-bold @(totalBalance >= 0 ? "text-success" : "text-danger")">
+                        @totalBalance.ToString("C")
+                    </p>
+                </div>
+                <div class="card-footer text-muted">
+                    @(totalBalance >= 0 ? "You're in the green!" : "You're in the red.")
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-md-8 mb-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body text-center d-flex flex-column justify-content-center align-items-center p-4">
+                    <h5 class="card-title fs-4">Ready to split a bill?</h5>
+                    <p class="card-text">Quickly add a new bill and split it with your friends.</p>
+                    <NavLink href="expense/new" class="btn btn-primary btn-lg px-5 py-3 mt-2">
+                        <i class="bi bi-plus-circle-fill me-2"></i> Add New Expense
+                    </NavLink>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header fs-5">
+                    <i class="bi bi-link-45deg"></i> Quick Links
+                </div>
+                <div class="list-group list-group-flush">
+                    <NavLink href="debts" class="list-group-item list-group-item-action fs-5 py-3">
+                        <i class="bi bi-cash-stack me-3"></i> My Debts
+                    </NavLink>
+                    <NavLink href="friends" class="list-group-item list-group-item-action fs-5 py-3">
+                        <i class="bi bi-people-fill me-3"></i> Friends
+                    </NavLink>
+                    <NavLink href="profile" class="list-group-item list-group-item-action fs-5 py-3">
+                        <i class="bi bi-person-circle me-3"></i> Profile
+                    </NavLink>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* <div class="row mt-2">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header fs-5">
+                    <i class="bi bi-clock-history"></i> Recent Activity
+                </div>
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong class="d-block">Groceries</strong>
+                            <small class="text-muted">You paid $90.00 and split with 2 people.</small>
+                        </div>
+                        <span class="badge bg-secondary rounded-pill">Oct 21</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong class="d-block">Dinner with Alex</strong>
+                            <small class="text-muted">Alex paid $60.00. You owe $30.00.</small>
+                        </div>
+                        <span class="badge bg-secondary rounded-pill">Oct 20</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong class="d-block">Movie Tickets</strong>
+                            <small class="text-muted">You paid $32.00 and split with 1 person.</small>
+                        </div>
+                        <span class="badge bg-secondary rounded-pill">Oct 19</span>
+                    </li>
+                </ul>
+                <div class="card-body text-center">
+                    <NavLink href="expenses/all" class="card-link">View All Activity</NavLink>
+                </div>
+            </div>
+        </div>
+    </div> *@
+
+</div>
+
+@code {
+    private decimal youOwe = 0m;
+    private decimal youAreOwed = 0m;
+    private decimal totalBalance = 0m;
+    private HttpClient _httpClient;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Force a page refresh (optional, only if you need a hard reload)
+        // Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (!user.Identity?.IsAuthenticated ?? true)
+        {
+            Navigation.NavigateTo("/login", true);
+            return;
+        }
+
+        // Only force reload if not already a hard reload
+        if (!Navigation.Uri.Contains("?reloaded=true"))
+        {
+            Navigation.NavigateTo(Navigation.Uri + "?reloaded=true", forceLoad: true);
+            return;
+        }
+
+        _httpClient = HttpClientFactory.CreateClient("WebAPI");
+
+        var summary = await _httpClient.GetFromJsonAsync<BalanceSummaryDto>("api/expenses/balance-summary");
+        if (summary != null)
+        {
+            youOwe = summary.YouOwe;
+            youAreOwed = summary.YouAreOwed;
+            totalBalance = summary.NetBalance;
+        }
+    }
+}

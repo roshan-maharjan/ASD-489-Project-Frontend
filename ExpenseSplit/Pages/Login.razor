@@ -1,0 +1,105 @@
+﻿@page "/login"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Models.DTOs
+@using ExpenseSplit.Services.AuthService
+@using Blazored.LocalStorage
+@inject HttpClient Http
+@inject NavigationManager NavManager
+@inject CustomAuthStateProvider AuthStateProvider
+@inject ILocalStorageService LocalStorage
+
+<PageTitle>Login</PageTitle>
+
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-4">
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h3 class="mb-0">Login</h3>
+            </div>
+            <div class="card-body">
+                <EditForm Model="@loginModel" OnValidSubmit="HandleLogin">
+                    <DataAnnotationsValidator />
+
+                    @if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <div class="alert alert-danger" role="alert">
+                            @errorMessage
+                        </div>
+                    }
+
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Email address</label>
+                        <InputText id="email" @bind-Value="loginModel.Email" class="form-control" />
+                        <ValidationMessage For="() => loginModel.Email" class="text-danger" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Password</label>
+                        <InputText id="password" @bind-Value="loginModel.Password" type="password" class="form-control" />
+                        <ValidationMessage For="() => loginModel.Password" class="text-danger" />
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100" disabled="@isSubmitting">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            <span> Loading...</span>
+                        }
+                        else
+                        {
+                            <span>Login</span>
+                        }
+                    </button>
+                </EditForm>
+            </div>
+            <div class="card-footer text-center">
+                <a href="/register">Don't have an account? Register</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private LoginModel loginModel = new("", "");
+    private string? errorMessage;
+    private bool isSubmitting;
+
+    private async Task HandleLogin()
+    {
+        isSubmitting = true;
+        errorMessage = null;
+
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/account/login", loginModel);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var authResponse = await response.Content.ReadFromJsonAsync<AuthResponse>();
+
+                // Save token to local storage
+                await LocalStorage.SetItemAsync("authToken", authResponse.Token);
+
+                // Notify the auth state provider
+                var customProvider = AuthStateProvider as CustomAuthStateProvider;
+                if (customProvider != null)
+                    await customProvider.MarkUserAsAuthenticated(authResponse.Token);
+
+                // Redirect to home page
+                NavManager.NavigateTo("/");
+            }
+            else
+            {
+                errorMessage = "Invalid email or password. Please try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"A network error occurred: {ex.Message}";
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+}

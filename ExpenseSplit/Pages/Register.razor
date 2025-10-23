@@ -1,0 +1,147 @@
+﻿@page "/register"
+@using Models.DTOs
+@using System.ComponentModel.DataAnnotations
+@inject HttpClient Http
+@inject NavigationManager NavManager
+
+<PageTitle>Register</PageTitle>
+
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h3 class="mb-0">Create an Account</h3>
+            </div>
+            <div class="card-body">
+                <EditForm Model="@registerModel" OnValidSubmit="HandleRegistration">
+                    <DataAnnotationsValidator />
+
+                    @if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <div class="alert alert-danger" role="alert">
+                            @errorMessage
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(successMessage))
+                    {
+                        <div class="alert alert-success" role="alert">
+                            @successMessage
+                        </div>
+                    }
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">First Name</label>
+                            <InputText @bind-Value="registerModel.FirstName" class="form-control" />
+                            <ValidationMessage For="() => registerModel.FirstName" class="text-danger" />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Last Name</label>
+                            <InputText @bind-Value="registerModel.LastName" class="form-control" />
+                            <ValidationMessage For="() => registerModel.LastName" class="text-danger" />
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Email address</label>
+                        <InputText @bind-Value="registerModel.Email" type="email" class="form-control" />
+                        <ValidationMessage For="() => registerModel.Email" class="text-danger" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Password</label>
+                        <InputText @bind-Value="registerModel.Password" type="password" class="form-control" />
+                        <ValidationMessage For="() => registerModel.Password" class="text-danger" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Confirm Password</label>
+                        <InputText @bind-Value="registerModel.ConfirmPassword" type="password" class="form-control" />
+                        <ValidationMessage For="() => registerModel.ConfirmPassword" class="text-danger" />
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100" disabled="@isSubmitting">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            <span> Creating Account...</span>
+                        }
+                        else
+                        {
+                            <span>Register</span>
+                        }
+                    </button>
+                </EditForm>
+            </div>
+            <div class="card-footer text-center">
+                <a href="/login">Already have an account? Login</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    // A private model for the form, including client-side validation
+    private RegisterFormModel registerModel = new();
+    private string? errorMessage;
+    private string? successMessage;
+    private bool isSubmitting;
+
+    // This class is only for the Blazor form
+    private class RegisterFormModel
+    {
+        [Required]
+        public string FirstName { get; set; } = "";
+        [Required]
+        public string LastName { get; set; } = "";
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = "";
+        [Required]
+        [MinLength(6, ErrorMessage = "Password must be at least 6 characters long.")]
+        public string Password { get; set; } = "";
+        [Required]
+        [Compare(nameof(Password), ErrorMessage = "Passwords do not match.")]
+        public string ConfirmPassword { get; set; } = "";
+    }
+
+    private async Task HandleRegistration()
+    {
+        isSubmitting = true;
+        errorMessage = null;
+        successMessage = null;
+
+        try
+        {
+            // Map the form model to the DTO
+            var apiRequest = new RegisterModel(
+                registerModel.FirstName,
+                registerModel.LastName,
+                registerModel.Email,
+                registerModel.Password
+            );
+
+            var response = await Http.PostAsJsonAsync("api/account/register", apiRequest);
+
+            if (response.IsSuccessStatusCode)
+            {
+                successMessage = "Registration successful! You can now log in.";
+                registerModel = new(); // Clear the form
+            }
+            else
+            {
+                // You could parse the response for specific errors here
+                errorMessage = "Registration failed. The email may already be in use.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"A network error occurred: {ex.Message}";
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+}

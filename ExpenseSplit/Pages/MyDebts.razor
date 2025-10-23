@@ -1,0 +1,222 @@
+﻿@page "/debts"
+@using ExpenseSplit.Models.DTOs
+@using Microsoft.AspNetCore.Authorization
+@inject IHttpClientFactory HttpClientFactory
+@attribute [Authorize]
+
+<PageTitle>My Debts</PageTitle>
+
+<h3><span class="oi oi-list-rich me-2"></span>My Debts</h3>
+
+<ul class="nav nav-tabs" id="debtTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link @(activeTab == "liabilities" ? "active" : "")" id="liabilities-tab" data-bs-toggle="tab" data-bs-target="#liabilities" type="button" role="tab">I Owe</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link @(activeTab == "outstanding" ? "active" : "")" id="outstanding-tab" data-bs-toggle="tab" data-bs-target="#outstanding" type="button" role="tab">Owed to Me</button>
+    </li>
+</ul>
+
+<div class="tab-content" id="debtTabsContent">
+
+    <div class="tab-pane fade @(activeTab == "liabilities" ? "show active" : "")" id="liabilities" role="tabpanel">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Owed To</th>
+                        <th>Email</th>
+                        <th>Description</th>
+                        <th>Amount</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (liabilities == null)
+                    {
+                        <tr><td colspan="5">Loading...</td></tr>
+                    }
+                    else if (!liabilities.Any())
+                    {
+                        <tr><td colspan="5" class="text-center">You don't owe anyone! 🎉</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var debt in liabilities)
+                        {
+                            <tr>
+                                <td>@debt.OwedToName</td>
+                                <td>@debt.OwedToEmail</td>
+                                <td>@debt.Description</td>
+                                <td>@debt.Amount.ToString("C")</td>
+                                <td>
+                                    <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#qrModal" @onclick="() => SelectDebt(debt)">
+                                        Pay (Show QR)
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="() => SettleDebt(debt.Id)">
+                                        Mark as Settled
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="tab-pane fade @(activeTab == "outstanding" ? "show active" : "")" id="outstanding" role="tabpanel">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Owed By</th>
+                        <th>Email</th>
+                        <th>Description</th>
+                        <th>Amount</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (outstanding == null)
+                    {
+                        <tr><td colspan="5">Loading...</td></tr>
+                    }
+                    else if (!outstanding.Any())
+                    {
+                        <tr><td colspan="5" class="text-center">No one owes you money.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var debt in outstanding)
+                        {
+                            <tr>
+                                <td>@debt.OwedByName</td>
+                                <td>@debt.OwedByEmail</td>
+                                <td>@debt.Description</td>
+                                <td>@debt.Amount.ToString("C")</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-info" @onclick="() => SendReminder(debt.Id)">
+                                        Send Reminder
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="() => SettleDebt(debt.Id)">
+                                        Mark as Settled
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="qrModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Pay @selectedDebt?.OwedToName</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                @if (string.IsNullOrEmpty(selectedDebt?.QRCodeS3Url))
+                {
+                    <p>@selectedDebt?.OwedToName has not uploaded a QR code.</p>
+                }
+                else
+                {
+                    <p>Scan this QR code to pay.</p>
+                    <img src="@selectedDebt.QRCodeS3Url" alt="Payment QR Code" class="img-fluid" />
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="messageModal" tabindex="-1" aria-labelledby="messageModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="messageModalLabel">Notification</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                @messageModalText
+            </div>
+        </div>
+    </div>
+</div>
+
+@inject NavigationManager NavigationManager
+
+@code {
+    private List<DebtSummary>? liabilities;
+    private List<DebtSummary>? outstanding;
+    private DebtSummary? selectedDebt;
+    private HttpClient _httpClient;
+    private string activeTab = "liabilities";
+    private string? messageModalText;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _httpClient = HttpClientFactory.CreateClient("WebAPI");
+        await LoadDebts();
+
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        var tab = query["tab"];
+        if (!string.IsNullOrEmpty(tab) && (tab == "liabilities" || tab == "outstanding"))
+        {
+            activeTab = tab;
+        }
+    }
+
+    private async Task LoadDebts()
+    {
+        liabilities = await _httpClient.GetFromJsonAsync<List<DebtSummary>>("api/debt/liabilities");
+        outstanding = await _httpClient.GetFromJsonAsync<List<DebtSummary>>("api/debt/outstanding");
+    }
+
+    private void SelectDebt(DebtSummary debt)
+    {
+        selectedDebt = debt;
+    }
+
+    private async Task SettleDebt(string debtId)
+    {
+        var response = await _httpClient.PostAsync($"api/debt/settle/{debtId}", null);
+        if (response.IsSuccessStatusCode)
+        {
+            await LoadDebts(); // Refresh lists
+        }
+        else
+        {
+            // Show error
+        }
+    }
+
+    private async Task SendReminder(string debtId)
+    {
+        var response = await _httpClient.PostAsync($"api/debt/send-debt-email/{debtId}", null);
+        if (response.IsSuccessStatusCode)
+        {
+            messageModalText = "Reminder email sent successfully!";
+        }
+        else
+        {
+            messageModalText = $"Failed to send reminder. Status: {response.StatusCode}";
+        }
+        await ShowMessageModal();
+    }
+
+    private async Task ShowMessageModal()
+    {
+        // Use JS interop to show the modal
+        var modal = await JS.InvokeAsync<IJSObjectReference>("bootstrap.Modal.getOrCreateInstance", "#messageModal");
+        await modal.InvokeVoidAsync("show");
+    }
+
+    [Inject]
+    private IJSRuntime JS { get; set; } = default!;
+}
