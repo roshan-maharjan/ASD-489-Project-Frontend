@@ -201,7 +201,6 @@
 
         try
         {
-            // Prepare a model for submission, excluding self from Participants
             var modelToSend = new CreateExpenseModel
             {
                 Description = expenseModel.Description,
@@ -209,8 +208,6 @@
                 Date = expenseModel.Date,
                 SplitType = expenseModel.SplitType,
                 Participants = expenseModel.Participants
-                    .Where(p => p.UserId != _currentUserId)
-                    .ToList()
             };
 
             var response = await _httpClient.PostAsJsonAsync("api/expenses", modelToSend);
